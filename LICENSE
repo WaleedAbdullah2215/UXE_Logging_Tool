@@ -1,0 +1,38 @@
+MIT License
+
+Copyright (c) 2026 UX Interaction Logging Tool
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+ETHICS AND PRIVACY NOTICE:
+
+This tool is designed for ethical UX research. Users of this software must:
+
+1. Obtain informed consent from all participants before recording
+2. Clearly explain what data is being collected
+3. Respect participant privacy and data protection rights
+4. Comply with applicable data protection regulations (GDPR, CCPA, etc.)
+5. Securely store and handle all collected data
+6. Allow participants to withdraw consent and delete their data
+7. Use collected data only for stated research purposes
+
+The software developers are not responsible for misuse of this tool or
+violations of privacy laws by users.

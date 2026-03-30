@@ -1,0 +1,26 @@
+# Session data (generated at runtime)
+sessions/
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log

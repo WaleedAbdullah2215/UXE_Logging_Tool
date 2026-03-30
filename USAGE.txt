@@ -1,0 +1,110 @@
+UX INTERACTION LOGGING TOOL - QUICK USAGE GUIDE
+================================================
+
+SETUP (One-time only)
+---------------------
+1. Install dependencies:
+   pip install -r requirements.txt
+   playwright install chromium
+
+2. Done! You're ready to go.
+
+
+RUNNING A SESSION
+-----------------
+Just run this command:
+
+   python main.py
+
+That's it! The tool will:
+• Automatically assign USER001, USER002, USER003, etc.
+• Randomly pick a task from 4 options
+• Open browser to CheapOair
+• Record everything you do
+• Close when you close the browser
+• Generate all reports automatically
+
+
+WHAT YOU'LL GET
+---------------
+After closing the browser, you'll find:
+
+sessions/USER001/USER001_TIMESTAMP/
+├── summary/
+│   └── SUMMARY.txt          ← READ THIS FIRST! Plain English explanation
+├── screenshots/             ← Visual timeline of your session
+├── logs/
+│   └── raw_events.jsonl     ← Real-time event log
+└── exports/
+    ├── raw_events.json      ← All events (structured)
+    ├── timeline.csv         ← Event timeline (Excel-ready)
+    ├── session_summary.csv  ← Key metrics (Excel-ready)
+    └── metrics.json         ← Full analytics
+
+
+UNDERSTANDING THE OUTPUT
+------------------------
+1. Start with: summary/SUMMARY.txt
+   • Written in plain English
+   • Explains what happened
+   • Shows problems found
+   • Gives overall score
+
+2. For details: exports/timeline.csv
+   • Open in Excel
+   • See every click, scroll, etc.
+   • Timestamps for everything
+
+3. For analysis: exports/session_summary.csv
+   • All metrics in one place
+   • Easy to compare sessions
+
+
+SEQUENTIAL USER IDs
+-------------------
+• First run: USER001
+• Second run: USER002
+• Third run: USER003
+• And so on...
+
+Each user gets their own folder with all their sessions.
+
+
+TASKS ASSIGNED
+--------------
+The tool randomly picks one of these:
+1. Book a one-way flight from New York to Los Angeles
+2. Search for round-trip flights from Chicago to Miami
+3. Find the cheapest flight from San Francisco to Seattle
+4. Compare flight prices from Boston to Denver
+
+
+PRIVACY
+-------
+• Keyboard TEXT is NEVER stored
+• Only key types logged (KeyPressed, Enter, etc.)
+• All data stays on your computer
+• No cloud upload
+
+
+TIPS
+----
+• Close browser normally when done (don't force quit)
+• Let the tool finish generating reports
+• Check summary/SUMMARY.txt for easy-to-read results
+• Compare multiple sessions by looking at their scores
+
+
+TROUBLESHOOTING
+---------------
+Browser doesn't open?
+→ Run: playwright install chromium
+
+Permission errors?
+→ Run: chmod +x main.py
+
+Need help?
+→ Check console output for error messages
+
+
+That's it! Just run: python main.py
