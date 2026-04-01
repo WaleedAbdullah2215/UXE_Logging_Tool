@@ -10,9 +10,10 @@ from pathlib import Path
 class SessionManager:
     """Manages recording session lifecycle"""
     
-    def __init__(self, participant_id: str, task_name: str):
+    def __init__(self, participant_id: str, task_name: str, task_id: str = None):
         self.participant_id = participant_id
         self.task_name = task_name
+        self.task_id = task_id
         self.start_time = datetime.now()
         self.end_time = None
         self.session_id = self._generate_session_id()
@@ -21,6 +22,8 @@ class SessionManager:
     def _generate_session_id(self) -> str:
         """Generate unique session identifier"""
         timestamp = self.start_time.strftime("%Y%m%d_%H%M%S")
+        if self.task_id:
+            return f"{self.participant_id}_{self.task_id}_{timestamp}"
         return f"{self.participant_id}_{timestamp}"
     
     def _create_session_directory(self) -> Path:

@@ -9,91 +9,129 @@ from typing import List, Dict, Any
 
 
 class Exporter:
-    """Exports session data to various formats"""
-    
+
     def __init__(self, session_dir: Path):
         self.session_dir = session_dir
         self.export_dir = session_dir / "exports"
-    
-    def export_all(self, events: List[Dict[str, Any]], metrics: Dict[str, Any], session_info: Dict[str, Any]):
-        """Export all data formats"""
-        self.export_raw_events_json(events)
-        self.export_session_summary_csv(metrics, session_info)
-        self.export_timeline_csv(events)
-        self.export_metrics_json(metrics, session_info)
-        
-        print(f"✓ Exported raw_events.json ({len(events)} events)")
-        print(f"✓ Exported session_summary.csv")
-        print(f"✓ Exported timeline.csv")
-        print(f"✓ Exported metrics.json")
-    
-    def export_raw_events_json(self, events: List[Dict[str, Any]]):
-        """Export raw events as JSON"""
-        filepath = self.export_dir / "raw_events.json"
-        with open(filepath, 'w') as f:
+        self.export_dir.mkdir(parents=True, exist_ok=True)
+
+    def export_all(self, events: List[Dict[str, Any]],
+                   metrics: Dict[str, Any], session_info: Dict[str, Any]):
+        self._raw_events_json(events)
+        self._raw_events_csv(events)
+        self._session_summary_csv(metrics, session_info)
+        self._task_summary_csv(metrics.get('task_summaries', []))
+        self._ux_metrics_csv(metrics, session_info)
+        self._metrics_json(metrics, session_info)
+
+        print(f"✓ raw_events.json  ({len(events)} events)")
+        print(f"✓ raw_events.csv")
+        print(f"✓ session_summary.csv")
+        print(f"✓ task_summary.csv")
+        print(f"✓ ux_metrics.csv")
+        print(f"✓ metrics.json")
+
+    # ── 1. Raw event log ──────────────────────────────────────────────────────
+
+    def _raw_events_json(self, events):
+        with open(self.export_dir / "raw_events.json", 'w') as f:
             json.dump(events, f, indent=2)
-    
-    def export_session_summary_csv(self, metrics: Dict[str, Any], session_info: Dict[str, Any]):
-        """Export session summary as CSV"""
-        filepath = self.export_dir / "session_summary.csv"
-        
-        with open(filepath, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['Metric', 'Value'])
-            
-            # Session info
-            writer.writerow(['Session ID', session_info.get('session_id', '')])
-            writer.writerow(['Participant ID', session_info.get('participant_id', '')])
-            writer.writerow(['Task Name', session_info.get('task_name', '')])
-            writer.writerow(['Target URL', session_info.get('target_url', '')])
-            writer.writerow(['Start Time', session_info.get('start_time', '')])
-            writer.writerow(['End Time', session_info.get('end_time', '')])
-            writer.writerow(['Duration (seconds)', f"{session_info.get('duration_seconds', 0):.2f}"])
-            writer.writerow([])
-            
-            # Metrics
-            writer.writerow(['Total Events', metrics.get('total_events', 0)])
-            writer.writerow(['Task Completion Time (seconds)', f"{metrics.get('task_completion_time', 0):.2f}"])
-            writer.writerow(['Click Frequency (per minute)', f"{metrics.get('click_frequency', 0):.2f}"])
-            writer.writerow(['Max Scroll Depth (%)', f"{metrics.get('scroll_depth_max', 0):.1f}"])
-            writer.writerow(['Hesitation Count', metrics.get('hesitation_count', 0)])
-            writer.writerow(['Rage Click Count', len(metrics.get('rage_clicks', []))])
-            writer.writerow(['Navigation Loops', len(metrics.get('navigation_loops', []))])
-            writer.writerow(['Back Button Usage', metrics.get('back_button_usage', 0)])
-            writer.writerow([])
-            
-            # Event breakdown
-            writer.writerow(['Event Type', 'Count'])
-            for event_type, count in metrics.get('event_breakdown', {}).items():
-                writer.writerow([event_type, count])
-    
-    def export_timeline_csv(self, events: List[Dict[str, Any]]):
-        """Export event timeline as CSV"""
-        filepath = self.export_dir / "timeline.csv"
-        
+
+    def _raw_events_csv(self, events):
+        """Flat CSV matching the spec example table."""
         if not events:
             return
-        
-        # Get all unique keys
         all_keys = set()
-        for event in events:
-            all_keys.update(event.keys())
-        
-        fieldnames = ['timestamp', 'event'] + sorted(list(all_keys - {'timestamp', 'event'}))
-        
+        for e in events:
+            all_keys.update(e.keys())
+        fields = ['timestamp', 'event'] + sorted(all_keys - {'timestamp', 'event'})
+        with open(self.export_dir / "raw_events.csv", 'w', newline='') as f:
+            w = csv.DictWriter(f, fieldnames=fields, extrasaction='ignore')
+            w.writeheader()
+            w.writerows(events)
+
+    # ── 2. User session summary ───────────────────────────────────────────────
+
+    def _session_summary_csv(self, metrics: Dict[str, Any], session_info: Dict[str, Any]):
+        filepath = self.export_dir / "session_summary.csv"
+        dur = session_info.get('duration_seconds', 0) or 0
+        mins = int(dur // 60)
+        secs = int(dur % 60)
+
+        rows = [
+            ['Metric', 'Value'],
+            [],
+            ['── SESSION INFO ──', ''],
+            ['Session ID',          session_info.get('session_id', '')],
+            ['Participant ID',      session_info.get('participant_id', '')],
+            ['Task',                session_info.get('task_name', '')],
+            ['Website',             session_info.get('target_url', '')],
+            ['Start Time',          str(session_info.get('start_time', ''))],
+            ['End Time',            str(session_info.get('end_time', ''))],
+            ['Total Duration',      f"{mins}m {secs}s ({dur:.1f}s)"],
+            [],
+            ['── ACTIVITY ──', ''],
+            ['Total Clicks',        metrics.get('click_count', 0)],
+            ['Pages Visited',       metrics.get('pages_visited', 0)],
+            ['Backtracks',          metrics.get('backtrack_count', 0)],
+            ['Errors',              metrics.get('error_count', 0)],
+            ['Hesitations',         metrics.get('hesitation_count', 0)],
+            ['Total Events',        metrics.get('total_events', 0)],
+            [],
+            ['── EVENT BREAKDOWN ──', ''],
+        ]
+        for etype, count in sorted(metrics.get('event_breakdown', {}).items()):
+            rows.append([etype, count])
+
         with open(filepath, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
-            writer.writeheader()
-            writer.writerows(events)
-    
-    def export_metrics_json(self, metrics: Dict[str, Any], session_info: Dict[str, Any]):
-        """Export metrics with session info as JSON"""
-        filepath = self.export_dir / "metrics.json"
-        
-        output = {
-            'session_info': session_info,
-            'metrics': metrics
-        }
-        
-        with open(filepath, 'w') as f:
-            json.dump(output, f, indent=2, default=str)
+            csv.writer(f).writerows(rows)
+
+    # ── 3. Task-wise summary ──────────────────────────────────────────────────
+
+    def _task_summary_csv(self, task_summaries: List[Dict[str, Any]]):
+        filepath = self.export_dir / "task_summary.csv"
+        with open(filepath, 'w', newline='') as f:
+            w = csv.writer(f)
+            w.writerow(['Task', 'Time (s)', 'Success', 'Errors', 'Hesitations'])
+            for t in task_summaries:
+                dur = t.get('duration_seconds')
+                w.writerow([
+                    t.get('task_name', ''),
+                    f"{dur:.2f}" if dur is not None else 'N/A',
+                    'Yes' if t.get('success') else 'No',
+                    t.get('errors', 0),
+                    t.get('hesitations', 0)
+                ])
+
+    # ── 4. UX metrics ─────────────────────────────────────────────────────────
+
+    def _ux_metrics_csv(self, metrics: Dict[str, Any], session_info: Dict[str, Any]):
+        filepath = self.export_dir / "ux_metrics.csv"
+        rows = [
+            ['Category', 'Metric', 'Value'],
+            [],
+            ['Performance', 'Task Completion Time (s)',  f"{metrics.get('task_completion_time', 0):.2f}"],
+            ['Performance', 'Success Rate',              f"{metrics.get('success_rate', 0)*100:.0f}%"],
+            ['Performance', 'Error Count',               metrics.get('error_count', 0)],
+            ['Performance', 'Backtracking Count',        metrics.get('backtrack_count', 0)],
+            ['Performance', 'Click Count',               metrics.get('click_count', 0)],
+            ['Performance', 'Click Frequency (per min)', f"{metrics.get('click_frequency', 0):.2f}"],
+            [],
+            ['Behavioral',  'Hesitation Count',          metrics.get('hesitation_count', 0)],
+            ['Behavioral',  'Hesitation Total (s)',       f"{metrics.get('hesitation_total_seconds', 0):.2f}"],
+            ['Behavioral',  'Hesitation Avg (s)',         f"{metrics.get('hesitation_avg_seconds', 0):.2f}"],
+            ['Behavioral',  'Misclick Rate',              f"{metrics.get('misclick_rate', 0):.3f}"],
+            ['Behavioral',  'Navigation Depth',           metrics.get('navigation_depth', 0)],
+            ['Behavioral',  'Max Scroll Depth (%)',       f"{metrics.get('scroll_depth_max', 0):.1f}"],
+            ['Behavioral',  'Rage Click Incidents',       len(metrics.get('rage_clicks', []))],
+            ['Behavioral',  'Pages Visited',              metrics.get('pages_visited', 0)],
+        ]
+        with open(filepath, 'w', newline='') as f:
+            csv.writer(f).writerows(rows)
+
+    # ── Full metrics JSON ─────────────────────────────────────────────────────
+
+    def _metrics_json(self, metrics: Dict[str, Any], session_info: Dict[str, Any]):
+        with open(self.export_dir / "metrics.json", 'w') as f:
+            json.dump({'session_info': session_info, 'metrics': metrics},
+                      f, indent=2, default=str)

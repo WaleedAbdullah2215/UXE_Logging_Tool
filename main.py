@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 """
-UX Interaction Logging Tool - Simplified Single Command Version
-Just run: python main.py
+UX Interaction Logging Tool — CheapOair Study
+Run: python main.py
+
+Flow:
+  1. Auto-assign next USER ID
+  2. Run all 4 tasks sequentially (one browser session per task)
+  3. Save each task's data under sessions/USERxxx/Tx_<name>/
+  4. Print full analysis after every task
+  5. Print combined summary at the end
 """
 
 import asyncio
+from pathlib import Path
+from datetime import datetime
+
 from session_manager import SessionManager
 from browser_controller import BrowserController
 from event_logger import EventLogger
@@ -12,386 +22,420 @@ from screenshot_manager import ScreenshotManager
 from metrics_engine import MetricsEngine
 from exporter import Exporter
 from analyze_session import generate_analysis_report
-from datetime import datetime
-from pathlib import Path
 
 
-# Fixed task for CheapOair study
-TASK_NAME = "Find the cheapest flight from Islamabad to Dubai"
+# ── Study configuration ───────────────────────────────────────────────────────
+
 TARGET_URL = "https://www.cheapoair.com"
 
+TASKS = [
+    ("T1", "Book cheapest round-trip ISB→DXB (21 Apr - 29 Apr, cabin baggage only)"),
+    ("T2", "Compare two one-way flights ISB→DXB (15 May, with baggage & seat selection)"),
+    ("T3", "Book round-trip ISB→DXB (21 Apr - 25 Apr, cabin only, NO add-ons)"),
+    ("T4", "Search round-trip ISB→DXB (21 Apr - 25 Apr), then modify dates to find cheaper option"),
+]
 
-def get_next_user_id():
-    """Get next sequential user ID (USER001, USER002, etc.)"""
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+TASK_INSTRUCTIONS = {
+    "T1": """
+  TASK 1 — Book Cheapest Round-Trip Flight
+  ─────────────────────────────────────────
+  Route   : Islamabad (ISB) → Dubai (DXB), Round-Trip
+  Depart  : 21st April
+  Return  : 29th April
+  Baggage : Cabin baggage only (no checked baggage)
+  Goal    : Find the CHEAPEST available option and proceed all the
+            way to the payment page (where card details are entered).
+
+  NOTE: We will cross-check the price you find against other travel
+  sites to evaluate whether CheapOair is offering a competitive fare.
+  Task is considered COMPLETE when you reach the payment/card page.
+""",
+    "T2": """
+  TASK 2 — Compare Two Flight Options
+  ─────────────────────────────────────────
+  Route   : Islamabad (ISB) → Dubai (DXB), One-Way
+  Date    : 15th May
+  Extras  : You ARE allowed to add baggage and select a seat
+  Goal    : Identify which of two flight options has the LOWER total
+            cost after including baggage fees and seat selection.
+            Explore at least two flights, view their full cost
+            breakdown, and proceed to the payment page for the
+            cheaper one.
+  Task is considered COMPLETE when you reach the payment/card page.
+""",
+    "T3": """
+  TASK 3 — Book Round-Trip, NO Add-ons
+  ─────────────────────────────────────────
+  Route   : Islamabad (ISB) → Dubai (DXB), Round-Trip
+  Depart  : 21st April
+  Return  : 25th April
+  Baggage : Cabin baggage only
+  Goal    : Complete the booking process reaching the payment page
+            WITHOUT selecting any optional add-ons (no seat
+            selection, no travel protection, no checked baggage,
+            no extras of any kind).
+  Task is considered COMPLETE when you reach the payment/card page.
+""",
+    "T4": """
+  TASK 4 — Modify Dates to Find Cheaper Option
+  ─────────────────────────────────────────
+  Route         : Islamabad (ISB) → Dubai (DXB), Round-Trip
+  Initial dates : Depart 21st April, Return 25th April
+  Baggage       : Cabin baggage only
+  Goal          : After viewing the initial results, MODIFY your
+                  travel dates (without restarting the search from
+                  scratch) to find a cheaper alternative. Explore
+                  different date combinations and proceed to the
+                  payment page for the cheapest option you find.
+  Task is considered COMPLETE when you reach the payment/card page.
+""",
+}
+
+
+def get_next_user_id() -> str:
+    """Return next sequential USER ID (USER001, USER002 …)"""
     sessions_dir = Path("sessions")
     sessions_dir.mkdir(exist_ok=True)
-    
-    # Find existing user directories
-    existing_users = []
-    for user_dir in sessions_dir.glob("USER*"):
-        if user_dir.is_dir():
+    nums = []
+    for d in sessions_dir.iterdir():
+        if d.is_dir() and d.name.startswith("USER"):
             try:
-                num = int(user_dir.name.replace("USER", ""))
-                existing_users.append(num)
+                nums.append(int(d.name[4:]))
             except ValueError:
-                continue
-    
-    next_num = max(existing_users) + 1 if existing_users else 1
-    return f"USER{next_num:03d}"
+                pass
+    return f"USER{(max(nums) + 1 if nums else 1):03d}"
 
 
-def calculate_task_completion(events):
+def calculate_task_completion(events: list, task_id: str) -> dict:
     """
-    Calculate task completion percentage
-    Task: Find the cheapest flight from Islamabad to Dubai
-    
-    Steps:
-    1. Enter origin (Islamabad) - 20%
-    2. Enter destination (Dubai) - 20%
-    3. Click search button - 30%
-    4. View search results - 20%
-    5. Click on a flight option - 10%
+    Completion = reaching the payment/card-entry page.
+    Each task also tracks intermediate steps for partial credit.
     """
-    completion = {
-        'percentage': 0,
-        'steps_completed': [],
-        'status': 'Not Started'
-    }
-    
-    # Check for origin input (Islamabad/ISB)
-    origin_entered = any(
-        (e.get('event') == 'click' and e.get('element') and 
-         ('islamabad' in e.get('element', '').lower() or 'isb' in e.get('element', '').lower())) or
-        (e.get('event') == 'keypress' and any(
-            'origin' in ev.get('selector', '').lower() or 'from' in ev.get('selector', '').lower()
-            for ev in events[:events.index(e)+1] if ev.get('event') == 'click'
-        ))
-        for e in events
+    def clicked(keywords):
+        return any(
+            e.get('event') == 'click' and
+            any(k in (e.get('element') or '').lower() for k in keywords)
+            for e in events
+        )
+
+    def navigated_to(keywords):
+        return any(
+            e.get('event') == 'navigation' and
+            any(k in (e.get('to_url') or '').lower() for k in keywords)
+            for e in events
+        )
+
+    def field_filled(keywords):
+        return any(
+            e.get('event') in ('input_end', 'click') and
+            any(k in (e.get('field_name') or e.get('element') or '').lower()
+                for k in keywords)
+            for e in events
+        )
+
+    # ── Universal: reached payment page? ─────────────────────────────────────
+    PAYMENT_KEYWORDS = ['payment', 'checkout', 'billing', 'card', 'credit',
+                        'pay', 'purchase', 'confirm', 'review-order',
+                        'review_order', 'revieworder']
+
+    reached_payment = (
+        navigated_to(PAYMENT_KEYWORDS) or
+        clicked(['enter card', 'pay now', 'complete booking',
+                 'confirm booking', 'place order', 'proceed to payment'])
     )
-    
-    # Check for destination input (Dubai/DXB)
-    destination_entered = any(
-        (e.get('event') == 'click' and e.get('element') and 
-         ('dubai' in e.get('element', '').lower() or 'dxb' in e.get('element', '').lower())) or
-        (e.get('event') == 'keypress' and any(
-            'dest' in ev.get('selector', '').lower() or 'to' in ev.get('selector', '').lower()
-            for ev in events[:events.index(e)+1] if ev.get('event') == 'click'
-        ))
-        for e in events
-    )
-    
-    # Check for search button click
-    search_clicked = any(
-        e.get('event') == 'click' and e.get('element') and 
-        ('search' in e.get('element', '').lower() or 'find' in e.get('element', '').lower())
-        for e in events
-    )
-    
-    # Check for navigation to results page
-    results_viewed = any(
-        e.get('event') == 'navigation' and 
-        ('result' in e.get('to_url', '').lower() or 'flight' in e.get('to_url', '').lower())
-        for e in events
-    )
-    
-    # Check for flight selection
-    flight_selected = False
-    if results_viewed:
-        results_index = next((i for i, e in enumerate(events) 
-                            if e.get('event') == 'navigation' and 
-                            ('result' in e.get('to_url', '').lower() or 'flight' in e.get('to_url', '').lower())), -1)
-        if results_index >= 0:
-            flight_selected = any(
-                e.get('event') == 'click' and e.get('element') and
-                ('select' in e.get('element', '').lower() or 'book' in e.get('element', '').lower() or
-                 'choose' in e.get('element', '').lower() or 'view' in e.get('element', '').lower())
-                for e in events[results_index:]
-            )
-    
-    # Calculate completion
+
+    # ── Per-task intermediate steps ───────────────────────────────────────────
+    if task_id == "T1":
+        steps_raw = [
+            ("Enter origin (Islamabad)",       field_filled(['islamabad', 'isb', 'origin', 'from'])),
+            ("Enter destination (Dubai)",      field_filled(['dubai', 'dxb', 'dest', 'to'])),
+            ("Select round-trip",              clicked(['round', 'round-trip', 'roundtrip'])),
+            ("Set dates (21 Apr – 29 Apr)",    clicked(['april', '21', '29', 'date', 'depart', 'return'])),
+            ("Click Search",                   clicked(['search', 'find flight', 'search flights'])),
+            ("View results",                   navigated_to(['result', 'flight', 'search'])),
+            ("Select cheapest flight",         clicked(['select', 'book', 'choose', 'view deal', 'continue'])),
+            ("Reached payment page ✅",        reached_payment),
+        ]
+        weights = [5, 5, 10, 10, 15, 15, 20, 20]
+
+    elif task_id == "T2":
+        steps_raw = [
+            ("Enter origin (Islamabad)",       field_filled(['islamabad', 'isb', 'origin', 'from'])),
+            ("Enter destination (Dubai)",      field_filled(['dubai', 'dxb', 'dest', 'to'])),
+            ("Set date (15 May)",              clicked(['may', '15', 'date', 'depart'])),
+            ("Click Search",                   clicked(['search', 'find flight', 'search flights'])),
+            ("View results",                   navigated_to(['result', 'flight', 'search'])),
+            ("Explore 2+ flight options",      len([e for e in events if e.get('event') == 'click' and
+                                                    any(k in (e.get('element') or '').lower()
+                                                        for k in ['select', 'view', 'detail', 'choose'])]) >= 2),
+            ("Add baggage / seat",             clicked(['baggage', 'bag', 'seat', 'luggage'])),
+            ("Reached payment page ✅",        reached_payment),
+        ]
+        weights = [5, 5, 10, 15, 15, 15, 15, 20]
+
+    elif task_id == "T3":
+        addon_clicks = [e for e in events if e.get('event') == 'click' and
+                        any(k in (e.get('element') or '').lower()
+                            for k in ['insurance', 'protection', 'seat', 'checked bag',
+                                      'add bag', 'upgrade', 'add-on', 'addon'])]
+        no_addons = len(addon_clicks) == 0
+        steps_raw = [
+            ("Enter origin (Islamabad)",       field_filled(['islamabad', 'isb', 'origin', 'from'])),
+            ("Enter destination (Dubai)",      field_filled(['dubai', 'dxb', 'dest', 'to'])),
+            ("Select round-trip",              clicked(['round', 'round-trip', 'roundtrip'])),
+            ("Set dates (21 Apr – 25 Apr)",    clicked(['april', '21', '25', 'date', 'depart', 'return'])),
+            ("Click Search",                   clicked(['search', 'find flight', 'search flights'])),
+            ("Select flight",                  clicked(['select', 'book', 'choose', 'continue'])),
+            ("Skipped all add-ons",            no_addons),
+            ("Reached payment page ✅",        reached_payment),
+        ]
+        weights = [5, 5, 10, 10, 15, 15, 20, 20]
+
+    elif task_id == "T4":
+        steps_raw = [
+            ("Enter origin (Islamabad)",       field_filled(['islamabad', 'isb', 'origin', 'from'])),
+            ("Enter destination (Dubai)",      field_filled(['dubai', 'dxb', 'dest', 'to'])),
+            ("Set initial dates (21–25 Apr)",  clicked(['april', '21', '25', 'date', 'depart', 'return'])),
+            ("Click Search",                   clicked(['search', 'find flight', 'search flights'])),
+            ("View initial results",           navigated_to(['result', 'flight', 'search'])),
+            ("Modify dates (no full restart)", clicked(['date', 'calendar', 'modify', 'change',
+                                                        'edit', 'depart', 'return'])),
+            ("Re-search with new dates",       clicked(['search', 'find flight', 'search flights'])),
+            ("Reached payment page ✅",        reached_payment),
+        ]
+        weights = [5, 5, 10, 15, 15, 15, 15, 20]
+
+    else:
+        steps_raw, weights = [], []
+
     percentage = 0
-    steps = []
-    
-    if origin_entered:
-        percentage += 20
-        steps.append("✓ Origin entered (Islamabad)")
-    else:
-        steps.append("✗ Origin not entered")
-    
-    if destination_entered:
-        percentage += 20
-        steps.append("✓ Destination entered (Dubai)")
-    else:
-        steps.append("✗ Destination not entered")
-    
-    if search_clicked:
-        percentage += 30
-        steps.append("✓ Search initiated")
-    else:
-        steps.append("✗ Search not initiated")
-    
-    if results_viewed:
-        percentage += 20
-        steps.append("✓ Results viewed")
-    else:
-        steps.append("✗ Results not viewed")
-    
-    if flight_selected:
-        percentage += 10
-        steps.append("✓ Flight selected")
-    else:
-        steps.append("✗ Flight not selected")
-    
-    completion['percentage'] = percentage
-    completion['steps_completed'] = steps
-    
+    step_labels = []
+    for (label, done), weight in zip(steps_raw, weights):
+        if done:
+            percentage += weight
+            step_labels.append(f"✓ {label}")
+        else:
+            step_labels.append(f"✗ {label}")
+
     if percentage == 0:
-        completion['status'] = 'Not Started'
-    elif percentage < 100:
-        completion['status'] = 'Partially Completed'
+        status = "Not Started"
+    elif reached_payment:
+        status = "Fully Completed"
+        percentage = 100
+    elif percentage < 50:
+        status = "Partially Completed (early stage)"
     else:
-        completion['status'] = 'Fully Completed'
-    
-    return completion
+        status = "Partially Completed (late stage)"
+
+    return {"percentage": percentage, "steps_completed": step_labels,
+            "status": status, "reached_payment": reached_payment}
 
 
-def create_human_readable_summary(session_dir, events, metrics, session_info, session_manager):
-    """Create plain English summary of the session"""
+def write_summary_txt(session_dir: Path, events: list, metrics: dict,
+                      session_info: dict, session_manager, task_completion: dict):
+    """Write plain-English SUMMARY.txt for a single task."""
     summary_dir = session_dir / "summary"
     summary_dir.mkdir(exist_ok=True)
-    
-    summary_file = summary_dir / "SUMMARY.txt"
-    
-    task_completion = metrics.get('task_completion', {'percentage': 0, 'steps_completed': [], 'status': 'Unknown'})
-    
-    with open(summary_file, 'w') as f:
+    dur = session_manager.duration_seconds
+    score = _score(metrics)
+
+    with open(summary_dir / "SUMMARY.txt", 'w') as f:
         f.write("="*70 + "\n")
-        f.write("UX STUDY SESSION SUMMARY - PLAIN ENGLISH REPORT\n")
+        f.write("UX STUDY — TASK SUMMARY\n")
         f.write("="*70 + "\n\n")
-        
-        # Basic Info
-        f.write("WHO & WHAT\n")
-        f.write("-" * 70 + "\n")
-        f.write(f"Participant: {session_info['participant_id']}\n")
-        f.write(f"Task Given: {session_info['task_name']}\n")
-        f.write(f"Website: CheapOair.com\n")
-        f.write(f"Date: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}\n\n")
-        
-        # Task Completion
-        f.write("TASK COMPLETION\n")
-        f.write("-" * 70 + "\n")
-        f.write(f"Status: {task_completion['status']}\n")
-        f.write(f"Completion: {task_completion['percentage']}%\n\n")
-        f.write("Steps:\n")
-        for step in task_completion['steps_completed']:
-            f.write(f"  {step}\n")
+        f.write(f"Participant : {session_info['participant_id']}\n")
+        f.write(f"Task ID     : {session_info['task_id']}\n")
+        f.write(f"Task        : {session_info['task_name']}\n")
+        f.write(f"Date        : {datetime.now().strftime('%B %d, %Y  %I:%M %p')}\n\n")
+
+        f.write("TASK COMPLETION\n" + "-"*70 + "\n")
+        f.write(f"Status     : {task_completion['status']}\n")
+        f.write(f"Completion : {task_completion['percentage']}%\n")
+        for s in task_completion['steps_completed']:
+            f.write(f"  {s}\n")
         f.write("\n")
-        
-        if task_completion['percentage'] == 100:
-            f.write("✅ User successfully completed the entire task!\n\n")
-        elif task_completion['percentage'] >= 50:
-            f.write("⚠️  User completed most of the task but didn't finish.\n\n")
-        else:
-            f.write("❌ User did not complete the task.\n\n")
-        
-        # Duration
-        duration = session_manager.duration_seconds
-        f.write("HOW LONG DID IT TAKE?\n")
-        f.write("-" * 70 + "\n")
-        f.write(f"Total Time: {duration:.0f} seconds ({duration/60:.1f} minutes)\n")
-        if duration < 30:
-            f.write("Assessment: Very quick!\n")
-        elif duration < 60:
-            f.write("Assessment: Good pace.\n")
-        elif duration < 120:
-            f.write("Assessment: Moderate time.\n")
-        else:
-            f.write("Assessment: Longer session.\n")
+
+        f.write("TIMING\n" + "-"*70 + "\n")
+        f.write(f"Duration : {int(dur//60)}m {int(dur%60)}s\n\n")
+
+        f.write("ACTIVITY\n" + "-"*70 + "\n")
+        bd = metrics.get('event_breakdown', {})
+        f.write(f"Total events : {metrics.get('total_events', 0)}\n")
+        f.write(f"Clicks       : {bd.get('click', 0)}\n")
+        f.write(f"Scrolls      : {bd.get('scroll', 0)}  (max depth {metrics.get('scroll_depth_max', 0):.0f}%)\n")
+        f.write(f"Keystrokes   : {bd.get('keypress', 0)}\n\n")
+
+        f.write("ISSUES\n" + "-"*70 + "\n")
+        issues = False
+        if metrics.get('hesitation_count', 0):
+            f.write(f"⚠️  Hesitations : {metrics['hesitation_count']} (paused >3s)\n"); issues = True
+        if metrics.get('rage_clicks'):
+            f.write(f"⚠️  Rage clicks : {len(metrics['rage_clicks'])}\n"); issues = True
+        if metrics.get('navigation_loops'):
+            f.write(f"⚠️  Nav loops   : {len(metrics['navigation_loops'])}\n"); issues = True
+        if not issues:
+            f.write("✅ No major issues\n")
         f.write("\n")
-        
-        # Activity Level
-        f.write("WHAT DID THE USER DO?\n")
-        f.write("-" * 70 + "\n")
-        f.write(f"Total Actions: {metrics['total_events']} interactions recorded\n\n")
-        
-        breakdown = metrics['event_breakdown']
-        if 'click' in breakdown:
-            f.write(f"Clicks: {breakdown['click']} times\n")
-        if 'scroll' in breakdown:
-            f.write(f"Scrolling: {breakdown['scroll']} times (max depth: {metrics['scroll_depth_max']:.0f}%)\n")
-        if 'keypress' in breakdown:
-            f.write(f"Typing: {breakdown['keypress']} keystrokes\n")
-        if 'mousemove' in breakdown:
-            f.write(f"Mouse Movement: {breakdown['mousemove']} movements\n")
-        f.write("\n")
-        
-        # Problems Detected
-        f.write("DID THE USER HAVE ANY PROBLEMS?\n")
-        f.write("-" * 70 + "\n")
-        
-        problems_found = False
-        
-        if metrics['hesitation_count'] > 0:
-            f.write(f"⚠️  HESITATIONS: {metrics['hesitation_count']} times (paused >5 seconds)\n")
-            problems_found = True
-        
-        if len(metrics.get('rage_clicks', [])) > 0:
-            f.write(f"⚠️  RAGE CLICKS: {len(metrics['rage_clicks'])} incidents (frustration detected)\n")
-            problems_found = True
-        
-        if len(metrics.get('navigation_loops', [])) > 0:
-            f.write(f"⚠️  NAVIGATION LOOPS: {len(metrics['navigation_loops'])} times (user went back)\n")
-            problems_found = True
-        
-        if not problems_found:
-            f.write("✅ NO MAJOR PROBLEMS DETECTED!\n")
-        f.write("\n")
-        
-        # Overall Score
-        f.write("OVERALL USABILITY SCORE\n")
-        f.write("-" * 70 + "\n")
-        
-        score = 100
-        if metrics['scroll_depth_max'] < 50:
-            score -= 15
-        if metrics['hesitation_count'] > 3:
-            score -= 10
-        if len(metrics.get('rage_clicks', [])) > 0:
-            score -= 20
-        if len(metrics.get('navigation_loops', [])) > 2:
-            score -= 15
-        score = max(0, score)
-        
-        f.write(f"Score: {score}/100\n\n")
-        
-        if score >= 80:
-            f.write("Rating: ⭐⭐⭐⭐⭐ EXCELLENT\n")
-        elif score >= 60:
-            f.write("Rating: ⭐⭐⭐⭐ GOOD\n")
-        elif score >= 40:
-            f.write("Rating: ⭐⭐⭐ FAIR\n")
-        else:
-            f.write("Rating: ⭐⭐ NEEDS IMPROVEMENT\n")
-        
-        f.write("\n")
-        f.write("="*70 + "\n")
-        f.write("END OF SUMMARY\n")
-        f.write("="*70 + "\n")
-    
-    print(f"✓ Human-readable summary created: {summary_file}")
+
+        f.write(f"USABILITY SCORE : {score}/100\n")
+        f.write(["⭐⭐ NEEDS IMPROVEMENT", "⭐⭐⭐ FAIR",
+                 "⭐⭐⭐⭐ GOOD", "⭐⭐⭐⭐⭐ EXCELLENT"][
+                     min(3, score // 25)] + "\n\n")
+        f.write("="*70 + "\nEND\n" + "="*70 + "\n")
 
 
-async def main():
-    """Main execution flow - fully automated"""
-    
-    # Auto-assign participant ID
-    participant_id = get_next_user_id()
+def _score(metrics: dict) -> int:
+    s = 100
+    if metrics.get('scroll_depth_max', 0) < 50:   s -= 15
+    if metrics.get('hesitation_count', 0) > 3:    s -= 10
+    if metrics.get('rage_clicks'):                 s -= 20
+    if len(metrics.get('navigation_loops', [])) > 2: s -= 15
+    if metrics.get('error_count', 0) > 2:          s -= 10
+    return max(0, s)
+
+
+# ── Single-task runner ────────────────────────────────────────────────────────
+
+async def run_task(participant_id: str, task_id: str, task_name: str) -> dict:
+    """Run one task, return a result dict for the combined summary."""
+
     session_info = {
         'participant_id': participant_id,
-        'task_name': TASK_NAME,
-        'target_url': TARGET_URL
+        'task_id':        task_id,
+        'task_name':      task_name,
+        'target_url':     TARGET_URL,
     }
-    
-    print("\n" + "="*70)
-    print("🚀 UX INTERACTION LOGGING TOOL - CHEAPOAIR STUDY")
-    print("="*70)
-    print(f"\n📋 Session Details:")
-    print(f"   Participant ID: {session_info['participant_id']}")
-    print(f"   Task: {session_info['task_name']}")
-    print(f"   Website: {session_info['target_url']}")
-    print("\n⚠️  Privacy Notice:")
-    print("   • Keyboard text content is NOT stored")
-    print("   • Only interaction patterns are logged")
-    print("="*70 + "\n")
-    
-    # Initialize components
-    session_manager = SessionManager(
-        participant_id=session_info['participant_id'],
-        task_name=session_info['task_name']
-    )
-    
-    event_logger = EventLogger(session_manager.session_dir)
+
+    session_manager    = SessionManager(participant_id, task_name, task_id)
+    event_logger       = EventLogger(session_manager.session_dir)
     screenshot_manager = ScreenshotManager(session_manager.session_dir)
-    
-    browser_controller = BrowserController(
-        event_logger=event_logger,
-        screenshot_manager=screenshot_manager,
-        session_id=session_manager.session_id
-    )
-    
-    print(f"✓ Session ID: {session_manager.session_id}")
-    print(f"✓ Output directory: {session_manager.session_dir}")
-    print(f"\n🌐 Launching browser...")
-    print("\n" + "="*70)
-    print("📹 RECORDING IN PROGRESS")
-    print("="*70)
-    print(f"Task: {TASK_NAME}")
-    print("Close the browser when done.")
-    print("="*70 + "\n")
-    
+    browser_controller = BrowserController(event_logger, screenshot_manager,
+                                           session_manager.session_id)
+
+    print(f"\n{'='*70}")
+    print(f"▶  {task_id}: {task_name}")
+    print(f"{'='*70}")
+    print(TASK_INSTRUCTIONS[task_id])
+    print(f"   Session : {session_manager.session_id}")
+    print(f"   Output  : {session_manager.session_dir}")
+    input(f"\n   Press ENTER to open the browser and start recording…\n")
+
     try:
-        await browser_controller.start(session_info['target_url'])
+        await browser_controller.start(TARGET_URL)
         await browser_controller.wait_for_close()
-        
     except KeyboardInterrupt:
-        print("\n\n⏹️  Stopping recording...")
+        print("\n⏹  Recording stopped by researcher.")
     finally:
         await browser_controller.stop()
         session_manager.end_session()
-        
-        # Generate analytics
-        print("\n📊 Generating analytics...")
-        metrics_engine = MetricsEngine(event_logger.events)
-        metrics = metrics_engine.compute_metrics()
-        
-        # Calculate task completion
-        task_completion = calculate_task_completion(event_logger.events)
-        metrics['task_completion'] = task_completion
-        
-        # Export data
-        print("💾 Exporting data...")
-        exporter = Exporter(session_manager.session_dir)
-        exporter.export_all(
-            events=event_logger.events,
-            metrics=metrics,
-            session_info={
-                **session_info,
-                'session_id': session_manager.session_id,
-                'start_time': session_manager.start_time,
-                'end_time': session_manager.end_time,
-                'duration_seconds': session_manager.duration_seconds
-            }
-        )
-        
-        # Create human-readable summary
-        print("📝 Creating plain English summary...")
-        create_human_readable_summary(
-            session_manager.session_dir,
-            event_logger.events,
-            metrics,
-            session_info,
-            session_manager
-        )
-        
-        print("\n" + "="*70)
-        print("✅ SESSION COMPLETE")
-        print("="*70)
-        print(f"Session ID: {session_manager.session_id}")
-        print(f"Duration: {session_manager.duration_seconds:.1f} seconds")
-        print(f"Events captured: {len(event_logger.events)}")
-        print(f"Task Completion: {task_completion['percentage']}% ({task_completion['status']})")
-        print("="*70)
-        
-        # Auto-run analysis
-        print("\n📈 Generating detailed analysis report...\n")
-        generate_analysis_report(session_manager.session_dir, metrics, session_info, session_manager)
-        
-        print("\n" + "="*70)
-        print("🎉 ALL DONE!")
-        print("="*70)
-        print(f"📁 All files saved to: {session_manager.session_dir}")
-        print(f"📄 Easy-to-read summary: {session_manager.session_dir}/summary/SUMMARY.txt")
-        print("="*70 + "\n")
+
+    # ── Analytics ─────────────────────────────────────────────────────────────
+    print(f"\n📊 Processing {task_id}…")
+    metrics = MetricsEngine(event_logger.events).compute_metrics()
+    metrics['_events'] = event_logger.events
+
+    task_completion = calculate_task_completion(event_logger.events, task_id)
+    metrics['task_completion'] = task_completion
+
+    full_session_info = {
+        **session_info,
+        'session_id':       session_manager.session_id,
+        'start_time':       session_manager.start_time,
+        'end_time':         session_manager.end_time,
+        'duration_seconds': session_manager.duration_seconds,
+    }
+
+    # ── Export ────────────────────────────────────────────────────────────────
+    Exporter(session_manager.session_dir).export_all(
+        events=event_logger.events,
+        metrics=metrics,
+        session_info=full_session_info
+    )
+
+    write_summary_txt(session_manager.session_dir, event_logger.events,
+                      metrics, full_session_info, session_manager, task_completion)
+
+    # ── Per-task analysis report ──────────────────────────────────────────────
+    generate_analysis_report(session_manager.session_dir, metrics,
+                             full_session_info, session_manager)
+
+    return {
+        'task_id':    task_id,
+        'task_name':  task_name,
+        'duration':   session_manager.duration_seconds,
+        'events':     len(event_logger.events),
+        'completion': task_completion,
+        'score':      _score(metrics),
+        'session_dir': session_manager.session_dir,
+    }
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+async def main():
+    participant_id = get_next_user_id()
+
+    print("\n" + "="*70)
+    print("🚀  UX INTERACTION LOGGING TOOL — CHEAPOAIR STUDY")
+    print("="*70)
+    print(f"\n  Participant : {participant_id}")
+    print(f"  Website     : {TARGET_URL}")
+    print(f"  Tasks       : {len(TASKS)} tasks to complete")
+    print("\n  ⚠️  Privacy: keyboard text is NOT stored. All data is local.")
+    print("\n  Tasks in this session:")
+    for tid, tname in TASKS:
+        print(f"    {tid}: {tname}")
+    print("\n" + "="*70)
+    input("\n  Press ENTER to begin the first task…\n")
+
+    results = []
+    for i, (task_id, task_name) in enumerate(TASKS, 1):
+        print(f"\n  ── Task {i} of {len(TASKS)} ──")
+        result = await run_task(participant_id, task_id, task_name)
+        results.append(result)
+
+        if i < len(TASKS):
+            print(f"\n✅  {task_id} complete.")
+            input(f"  Press ENTER when ready to start {TASKS[i][0]}: {TASKS[i][1]}\n")
+
+    # ── Combined summary ──────────────────────────────────────────────────────
+    print("\n" + "="*70)
+    print(f"🏁  ALL TASKS COMPLETE — {participant_id}")
+    print("="*70)
+    print(f"\n  {'Task':<6} {'Name':<48} {'Time':>8}  {'Done':>6}  {'Score':>6}")
+    print(f"  {'─'*6} {'─'*48} {'─'*8}  {'─'*6}  {'─'*6}")
+    for r in results:
+        mins = int(r['duration'] // 60)
+        secs = int(r['duration'] % 60)
+        pct  = r['completion']['percentage']
+        paid = "✅" if r['completion'].get('reached_payment') else "❌"
+        print(f"  {r['task_id']:<6} {r['task_name'][:48]:<48} "
+              f"{mins}m{secs:02d}s  {paid} {pct:>3}%  {r['score']:>5}/100")
+
+    # Write combined summary file
+    combined_dir = Path("sessions") / participant_id
+    with open(combined_dir / "COMBINED_SUMMARY.txt", 'w') as f:
+        f.write("="*70 + "\n")
+        f.write(f"COMBINED STUDY SUMMARY — {participant_id}\n")
+        f.write(f"Date: {datetime.now().strftime('%B %d, %Y  %I:%M %p')}\n")
+        f.write("="*70 + "\n\n")
+        f.write(f"{'Task':<6} {'Name':<48} {'Time':>8}  {'Payment':>8}  {'Done':>6}  {'Score':>6}\n")
+        f.write(f"{'─'*6} {'─'*48} {'─'*8}  {'─'*8}  {'─'*6}  {'─'*6}\n")
+        for r in results:
+            mins = int(r['duration'] // 60)
+            secs = int(r['duration'] % 60)
+            pct  = r['completion']['percentage']
+            paid = "Yes" if r['completion'].get('reached_payment') else "No"
+            f.write(f"{r['task_id']:<6} {r['task_name'][:48]:<48} "
+                    f"{mins}m{secs:02d}s  {paid:>8}  {pct:>5}%  {r['score']:>5}/100\n")
+        f.write("\n" + "="*70 + "\n")
+
+    print(f"\n  📁 All data saved under: sessions/{participant_id}/")
+    print(f"  📄 Combined summary   : sessions/{participant_id}/COMBINED_SUMMARY.txt")
+    print("\n" + "="*70 + "\n")
 
 
 if __name__ == "__main__":
