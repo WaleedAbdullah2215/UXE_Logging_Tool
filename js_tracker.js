@@ -1,4 +1,3 @@
-// UX Interaction Tracker - Injected JavaScript
 // Captures all user interactions and sends to Python backend
 
 (function() {
@@ -9,7 +8,6 @@
 
     console.log('[UX Tracker] Initialized on:', window.location.href);
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
 
     function throttle(func, delay) {
         let lastCall = 0;
@@ -48,7 +46,6 @@
         return Math.round((st / (dh - wh)) * 100);
     }
 
-    // Identify the semantic role of an input field for UX research
     function getFieldName(el) {
         if (!el) return 'unknown';
         const candidates = [el.name, el.id, el.placeholder,
@@ -65,12 +62,9 @@
         return el.tagName.toLowerCase();
     }
 
-    // ── State ─────────────────────────────────────────────────────────────────
-
+    
     let lastScrollY = window.pageYOffset || 0;
     const inputStartTimes = new WeakMap(); // el -> ISO timestamp
-
-    // ── Click ─────────────────────────────────────────────────────────────────
 
     document.addEventListener('click', function(e) {
         window.__UX_LOG_EVENT__({
@@ -92,9 +86,7 @@
         });
     }, true);
 
-    // ── Input field tracking ──────────────────────────────────────────────────
-
-    // Typing start
+   
     document.addEventListener('focusin', function(e) {
         const el = e.target;
         if (!el || !['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return;
@@ -107,7 +99,6 @@
         });
     }, true);
 
-    // Typing end
     document.addEventListener('focusout', function(e) {
         const el = e.target;
         if (!el || !['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return;
@@ -123,8 +114,6 @@
         inputStartTimes.delete(el);
     }, true);
 
-    // ── Scroll ────────────────────────────────────────────────────────────────
-
     const scrollHandler = throttle(function() {
         const currentY = window.pageYOffset || document.documentElement.scrollTop;
         const direction = currentY > lastScrollY ? 'down' : 'up';
@@ -138,8 +127,6 @@
     }, 400);
     window.addEventListener('scroll', scrollHandler, true);
 
-    // ── Keyboard ──────────────────────────────────────────────────────────────
-
     document.addEventListener('keydown', function(e) {
         if (isSensitiveField(e.target)) {
             window.__UX_LOG_EVENT__({ type: 'keypress', key_type: '[SENSITIVE_FIELD]' });
@@ -152,14 +139,10 @@
         });
     }, true);
 
-    // ── Mouse movement ────────────────────────────────────────────────────────
-
-    const mouseMoveHandler = throttle(function(e) {
+   const mouseMoveHandler = throttle(function(e) {
         window.__UX_LOG_EVENT__({ type: 'mousemove', x: e.clientX, y: e.clientY });
     }, 1000);
     document.addEventListener('mousemove', mouseMoveHandler, true);
-
-    // ── Focus / visibility ────────────────────────────────────────────────────
 
     window.addEventListener('focus', function() {
         window.__UX_LOG_EVENT__({ type: 'focus_change', focus_state: 'focused' });
@@ -174,9 +157,6 @@
         });
     });
 
-    // ── Form error detection ──────────────────────────────────────────────────
-
-    // Watch for HTML5 validation errors on submit
     document.addEventListener('invalid', function(e) {
         window.__UX_LOG_EVENT__({
             type: 'form_error',
@@ -186,7 +166,6 @@
         });
     }, true);
 
-    // Watch for submit failures (form submitted but page didn't navigate = likely error)
     document.addEventListener('submit', function(e) {
         window.__UX_LOG_EVENT__({
             type: 'form_submit',

@@ -1,14 +1,11 @@
-"""
-Metrics Engine - Computes all UX analytics from event logs
-"""
+
 
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from collections import defaultdict
 
 
-IDLE_THRESHOLD = 3.0  # seconds — detect inactivity > 3s
-
+IDLE_THRESHOLD = 3.0 
 
 class MetricsEngine:
 
@@ -17,7 +14,6 @@ class MetricsEngine:
         self.events = events or []
         self.idle_threshold = idle_threshold
 
-    # ── Public entry point ────────────────────────────────────────────────────
 
     def compute_metrics(self) -> Dict[str, Any]:
         if not self.events:
@@ -37,7 +33,6 @@ class MetricsEngine:
         hes_avg        = hes_total / len(idle_periods) if idle_periods else 0.0
 
         return {
-            # ── Performance metrics ──────────────────────────────────────────
             'total_events':            len(self.events),
             'task_completion_time':    duration,
             'click_frequency':         self._click_frequency(duration, click_count),
@@ -48,7 +43,6 @@ class MetricsEngine:
             'pages_visited':           pages_visited,
             'success_rate':            self._success_rate(),
 
-            # ── Behavioral metrics ───────────────────────────────────────────
             'hesitation_count':        len(idle_periods),
             'hesitation_total_seconds': round(hes_total, 2),
             'hesitation_avg_seconds':  round(hes_avg, 2),
@@ -56,18 +50,15 @@ class MetricsEngine:
             'navigation_depth':        self._navigation_depth(),
             'repeated_actions':        repeated,
 
-            # ── Detail lists ─────────────────────────────────────────────────
             'idle_periods':            idle_periods,
             'rage_clicks':             rage_clicks,
             'navigation_loops':        nav_loops,
             'back_button_usage':       backtracks,
             'event_breakdown':         breakdown,
 
-            # ── Task-wise summary ────────────────────────────────────────────
             'task_summaries':          self._task_summaries(),
         }
 
-    # ── Performance helpers ───────────────────────────────────────────────────
 
     def _duration(self) -> float:
         if len(self.events) < 2:
@@ -103,7 +94,6 @@ class MetricsEngine:
         )
         return 1.0 if reached_results else 0.0
 
-    # ── Behavioral helpers ────────────────────────────────────────────────────
 
     def _detect_idle_periods(self) -> List[Dict[str, Any]]:
         idle = []
@@ -156,7 +146,6 @@ class MetricsEngine:
         return loops
 
     def _misclick_rate(self) -> float:
-        """Fraction of clicks that were rapid re-clicks on the same selector."""
         clicks = [e for e in self.events if e.get('event') == 'click']
         if not clicks:
             return 0.0
@@ -172,7 +161,6 @@ class MetricsEngine:
         return round(misclicks / len(clicks), 3)
 
     def _navigation_depth(self) -> int:
-        """Max number of unique pages visited in a single forward sequence."""
         visited, max_depth = [], 0
         for e in self.events:
             if e.get('event') in ('navigation', 'page_load'):
@@ -200,7 +188,6 @@ class MetricsEngine:
             bd[e.get('event', 'unknown')] += 1
         return dict(bd)
 
-    # ── Task-wise summary ─────────────────────────────────────────────────────
 
     def _task_summaries(self) -> List[Dict[str, Any]]:
         """
@@ -227,20 +214,17 @@ class MetricsEngine:
 
         errors = sum(1 for e in self.events if e.get('event') == 'form_error')
 
-        # Step 1 – Enter origin
         s1_start = first_match(lambda e: e.get('event') == 'input_start' and
                                any(k in (e.get('field_name') or '').lower()
                                    for k in ('origin', 'from', 'departure', 'source')))
         s1_end   = first_match(lambda e: e.get('event') == 'input_end' and
                                any(k in (e.get('field_name') or '').lower()
                                    for k in ('origin', 'from', 'departure', 'source')))
-        # fallback: click on ISB suggestion
         if not s1_end:
             s1_end = first_match(lambda e: e.get('event') == 'click' and
                                  any(k in (e.get('element') or '').lower()
                                      for k in ('islamabad', 'isb')))
 
-        # Step 2 – Enter destination
         s2_start = first_match(lambda e: e.get('event') == 'input_start' and
                                any(k in (e.get('field_name') or '').lower()
                                    for k in ('dest', 'to', 'arrival', 'destination')))
@@ -252,7 +236,6 @@ class MetricsEngine:
                                  any(k in (e.get('element') or '').lower()
                                      for k in ('dubai', 'dxb')))
 
-        # Step 3 – Click search
         s3_start = first_match(lambda e: e.get('event') == 'click' and
                                any(k in (e.get('element') or '').lower()
                                    for k in ('search', 'find flight', 'search flight')))
@@ -260,13 +243,11 @@ class MetricsEngine:
                                any(k in (e.get('to_url') or '').lower()
                                    for k in ('result', 'flight', 'search')))
 
-        # Step 4 – View results
         s4_start = s3_end
         s4_end   = first_match(lambda e: e.get('event') == 'click' and
                                any(k in (e.get('element') or '').lower()
                                    for k in ('select', 'book', 'choose', 'view deal', 'view')))
 
-        # Step 5 – Select cheapest flight
         s5_start = s4_end
         s5_end   = last_match(lambda e: e.get('event') == 'click' and
                               any(k in (e.get('element') or '').lower()
@@ -298,7 +279,6 @@ class MetricsEngine:
 
         return summaries
 
-    # ── Utilities ─────────────────────────────────────────────────────────────
 
     def _coords_close(self, coords: List[tuple], tol: int = 20) -> bool:
         xs = [c[0] for c in coords]

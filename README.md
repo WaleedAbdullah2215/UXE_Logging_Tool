@@ -1,15 +1,10 @@
-# UX Interaction Logging Tool - CheapOair Study
-
 Automated UX research tool for CheapOair flight booking studies. Records detailed user interaction data with zero website modification.
 
-## Quick Start
 
 ```bash
-# Install dependencies (one-time setup)
 pip install -r requirements.txt
 playwright install chromium
 
-# Run the tool
 python main.py
 ```
 

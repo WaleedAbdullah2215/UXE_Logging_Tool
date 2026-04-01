@@ -70,15 +70,6 @@ SEQUENTIAL USER IDs
 Each user gets their own folder with all their sessions.
 
 
-TASKS ASSIGNED
---------------
-The tool randomly picks one of these:
-1. Book a one-way flight from New York to Los Angeles
-2. Search for round-trip flights from Chicago to Miami
-3. Find the cheapest flight from San Francisco to Seattle
-4. Compare flight prices from Boston to Denver
-
-
 PRIVACY
 -------
 • Keyboard TEXT is NEVER stored

@@ -24,7 +24,6 @@ from exporter import Exporter
 from analyze_session import generate_analysis_report
 
 
-# ── Study configuration ───────────────────────────────────────────────────────
 
 TARGET_URL = "https://www.cheapoair.com"
 
@@ -36,7 +35,6 @@ TASKS = [
 ]
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 TASK_INSTRUCTIONS = {
     "T1": """
@@ -96,7 +94,6 @@ TASK_INSTRUCTIONS = {
 
 
 def get_next_user_id() -> str:
-    """Return next sequential USER ID (USER001, USER002 …)"""
     sessions_dir = Path("sessions")
     sessions_dir.mkdir(exist_ok=True)
     nums = []
@@ -110,10 +107,7 @@ def get_next_user_id() -> str:
 
 
 def calculate_task_completion(events: list, task_id: str) -> dict:
-    """
-    Completion = reaching the payment/card-entry page.
-    Each task also tracks intermediate steps for partial credit.
-    """
+
     def clicked(keywords):
         return any(
             e.get('event') == 'click' and
@@ -147,7 +141,6 @@ def calculate_task_completion(events: list, task_id: str) -> dict:
                  'confirm booking', 'place order', 'proceed to payment'])
     )
 
-    # ── Per-task intermediate steps ───────────────────────────────────────────
     if task_id == "T1":
         steps_raw = [
             ("Enter origin (Islamabad)",       field_filled(['islamabad', 'isb', 'origin', 'from'])),
@@ -297,7 +290,6 @@ def _score(metrics: dict) -> int:
     return max(0, s)
 
 
-# ── Single-task runner ────────────────────────────────────────────────────────
 
 async def run_task(participant_id: str, task_id: str, task_name: str) -> dict:
     """Run one task, return a result dict for the combined summary."""
@@ -332,7 +324,6 @@ async def run_task(participant_id: str, task_id: str, task_name: str) -> dict:
         await browser_controller.stop()
         session_manager.end_session()
 
-    # ── Analytics ─────────────────────────────────────────────────────────────
     print(f"\n📊 Processing {task_id}…")
     metrics = MetricsEngine(event_logger.events).compute_metrics()
     metrics['_events'] = event_logger.events
@@ -348,7 +339,6 @@ async def run_task(participant_id: str, task_id: str, task_name: str) -> dict:
         'duration_seconds': session_manager.duration_seconds,
     }
 
-    # ── Export ────────────────────────────────────────────────────────────────
     Exporter(session_manager.session_dir).export_all(
         events=event_logger.events,
         metrics=metrics,
@@ -358,7 +348,6 @@ async def run_task(participant_id: str, task_id: str, task_name: str) -> dict:
     write_summary_txt(session_manager.session_dir, event_logger.events,
                       metrics, full_session_info, session_manager, task_completion)
 
-    # ── Per-task analysis report ──────────────────────────────────────────────
     generate_analysis_report(session_manager.session_dir, metrics,
                              full_session_info, session_manager)
 
@@ -373,7 +362,6 @@ async def run_task(participant_id: str, task_id: str, task_name: str) -> dict:
     }
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main():
     participant_id = get_next_user_id()
@@ -401,7 +389,6 @@ async def main():
             print(f"\n✅  {task_id} complete.")
             input(f"  Press ENTER when ready to start {TASKS[i][0]}: {TASKS[i][1]}\n")
 
-    # ── Combined summary ──────────────────────────────────────────────────────
     print("\n" + "="*70)
     print(f"🏁  ALL TASKS COMPLETE — {participant_id}")
     print("="*70)
@@ -415,7 +402,6 @@ async def main():
         print(f"  {r['task_id']:<6} {r['task_name'][:48]:<48} "
               f"{mins}m{secs:02d}s  {paid} {pct:>3}%  {r['score']:>5}/100")
 
-    # Write combined summary file
     combined_dir = Path("sessions") / participant_id
     with open(combined_dir / "COMBINED_SUMMARY.txt", 'w') as f:
         f.write("="*70 + "\n")

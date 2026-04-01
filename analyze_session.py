@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""
-Session Analysis - Prints full research-grade report to terminal
-"""
 
 import json
 import sys
@@ -21,7 +18,6 @@ def generate_analysis_report(session_dir, metrics, session_info, session_manager
     print("="*70)
     print(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # ── 1. Session overview ───────────────────────────────────────────────────
     print("\n" + "─"*70)
     print("1.  SESSION OVERVIEW")
     print("─"*70)
@@ -32,7 +28,6 @@ def generate_analysis_report(session_dir, metrics, session_info, session_manager
     print(f"  End Time       : {session_info.get('end_time', '')}")
     print(f"  Total Duration : {mins}m {secs}s  ({dur:.1f}s)")
 
-    # ── 2. Raw event log sample ───────────────────────────────────────────────
     print("\n" + "─"*70)
     print("2.  RAW EVENT LOG  (last 10 events)")
     print("─"*70)
@@ -51,7 +46,6 @@ def generate_analysis_report(session_dir, metrics, session_info, session_manager
     if not sample:
         print("  (no events — see exports/raw_events.csv for full log)")
 
-    # ── 3. User session summary ───────────────────────────────────────────────
     print("\n" + "─"*70)
     print("3.  USER SESSION SUMMARY")
     print("─"*70)
@@ -68,7 +62,6 @@ def generate_analysis_report(session_dir, metrics, session_info, session_manager
     for label, val in rows:
         print(f"  {label:<22} {val}")
 
-    # ── 4. Task-wise summary ──────────────────────────────────────────────────
     print("\n" + "─"*70)
     print("4.  TASK-WISE SUMMARY")
     print("─"*70)
@@ -80,7 +73,6 @@ def generate_analysis_report(session_dir, metrics, session_info, session_manager
               f"{'Yes' if t['success'] else 'No':<10} "
               f"{t['errors']:<8} {t['hesitations']}")
 
-    # ── 5. UX metrics ─────────────────────────────────────────────────────────
     print("\n" + "─"*70)
     print("5.  UX METRICS")
     print("─"*70)
@@ -109,7 +101,6 @@ def generate_analysis_report(session_dir, metrics, session_info, session_manager
     for label, val in beh:
         print(f"    {label:<28} {val}")
 
-    # ── 6. Idle / hesitation detail ───────────────────────────────────────────
     idle = metrics.get('idle_periods', [])
     if idle:
         print("\n" + "─"*70)
@@ -120,7 +111,6 @@ def generate_analysis_report(session_dir, metrics, session_info, session_manager
         for p in sorted(idle, key=lambda x: x['duration_seconds'], reverse=True)[:10]:
             print(f"  {p['start'][-19:]:<26} {p['duration_seconds']:<14.1f} {p['page'][-35:]}")
 
-    # ── 7. Rage clicks ────────────────────────────────────────────────────────
     rage = metrics.get('rage_clicks', [])
     if rage:
         print("\n" + "─"*70)
@@ -129,7 +119,6 @@ def generate_analysis_report(session_dir, metrics, session_info, session_manager
         for r in rage:
             print(f"  {r['timestamp'][-19:]}  selector={r['selector']}  at {r['location']}")
 
-    # ── 8. Task completion ────────────────────────────────────────────────────
     tc = metrics.get('task_completion', {})
     if tc:
         print("\n" + "─"*70)
@@ -140,7 +129,6 @@ def generate_analysis_report(session_dir, metrics, session_info, session_manager
         for step in tc.get('steps_completed', []):
             print(f"    {step}")
 
-    # ── 9. Usability score ────────────────────────────────────────────────────
     score = _usability_score(metrics)
     print("\n" + "─"*70)
     print("9.  USABILITY SCORE")
@@ -175,9 +163,6 @@ def _usability_score(metrics: dict) -> int:
     if metrics.get('error_count', 0) > 2:
         score -= 10
     return max(0, score)
-
-
-# ── CLI entry point ───────────────────────────────────────────────────────────
 
 def main():
     if len(sys.argv) < 2:

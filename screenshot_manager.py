@@ -1,7 +1,3 @@
-"""
-Screenshot Manager - Captures screenshots at key interaction points
-"""
-
 from playwright.async_api import Page
 from pathlib import Path
 from datetime import datetime
@@ -9,7 +5,6 @@ import asyncio
 
 
 class ScreenshotManager:
-    """Manages screenshot capture during session"""
     
     def __init__(self, session_dir: Path):
         self.session_dir = session_dir
@@ -27,5 +22,4 @@ class ScreenshotManager:
             await page.screenshot(path=str(filepath), full_page=False)
             
         except Exception as e:
-            # Don't fail session if screenshot fails
             print(f"⚠️  Screenshot failed: {e}")

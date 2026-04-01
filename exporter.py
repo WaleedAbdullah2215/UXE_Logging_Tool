@@ -31,7 +31,6 @@ class Exporter:
         print(f"✓ ux_metrics.csv")
         print(f"✓ metrics.json")
 
-    # ── 1. Raw event log ──────────────────────────────────────────────────────
 
     def _raw_events_json(self, events):
         with open(self.export_dir / "raw_events.json", 'w') as f:
@@ -50,7 +49,6 @@ class Exporter:
             w.writeheader()
             w.writerows(events)
 
-    # ── 2. User session summary ───────────────────────────────────────────────
 
     def _session_summary_csv(self, metrics: Dict[str, Any], session_info: Dict[str, Any]):
         filepath = self.export_dir / "session_summary.csv"
@@ -86,7 +84,6 @@ class Exporter:
         with open(filepath, 'w', newline='') as f:
             csv.writer(f).writerows(rows)
 
-    # ── 3. Task-wise summary ──────────────────────────────────────────────────
 
     def _task_summary_csv(self, task_summaries: List[Dict[str, Any]]):
         filepath = self.export_dir / "task_summary.csv"
@@ -103,7 +100,6 @@ class Exporter:
                     t.get('hesitations', 0)
                 ])
 
-    # ── 4. UX metrics ─────────────────────────────────────────────────────────
 
     def _ux_metrics_csv(self, metrics: Dict[str, Any], session_info: Dict[str, Any]):
         filepath = self.export_dir / "ux_metrics.csv"
@@ -129,7 +125,6 @@ class Exporter:
         with open(filepath, 'w', newline='') as f:
             csv.writer(f).writerows(rows)
 
-    # ── Full metrics JSON ─────────────────────────────────────────────────────
 
     def _metrics_json(self, metrics: Dict[str, Any], session_info: Dict[str, Any]):
         with open(self.export_dir / "metrics.json", 'w') as f:

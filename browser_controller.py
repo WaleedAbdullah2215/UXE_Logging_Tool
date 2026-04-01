@@ -1,6 +1,4 @@
-"""
-Browser Controller - Manages Playwright browser and event injection
-"""
+
 
 from playwright.async_api import async_playwright, Page, Browser
 from pathlib import Path
@@ -11,8 +9,6 @@ from datetime import datetime
 
 
 class BrowserController:
-    """Controls browser automation and event tracking"""
-
     def __init__(self, event_logger: EventLogger,
                  screenshot_manager: ScreenshotManager, session_id: str):
         self.event_logger = event_logger
@@ -29,7 +25,6 @@ class BrowserController:
         return js_path.read_text()
 
     async def start(self, target_url: str):
-        """Launch browser and start tracking."""
         self.playwright = await async_playwright().start()
 
         try:
@@ -60,7 +55,6 @@ class BrowserController:
         await self.screenshot_manager.capture(self.page, "page_load", target_url)
 
     async def _inject_tracker(self):
-        """Inject JS tracker and expose the Python bridge."""
         try:
             await self.page.expose_function('__UX_LOG_EVENT__', self._handle_js_event)
         except Exception:
@@ -68,7 +62,6 @@ class BrowserController:
         await self.page.evaluate(self.js_tracker)
 
     async def _handle_js_event(self, event_data: dict):
-        """Route JS events to the appropriate EventLogger method."""
         event_type = event_data.get('type')
         url = self.page.url
 
@@ -149,7 +142,6 @@ class BrowserController:
             )
 
     async def _setup_event_handlers(self):
-        """Playwright-level navigation handler."""
 
         async def on_navigation(frame):
             if frame == self.page.main_frame:
@@ -167,7 +159,6 @@ class BrowserController:
         self.page.on('framenavigated', on_navigation)
 
     async def wait_for_close(self):
-        """Block until the browser window is closed."""
         try:
             while not self.page.is_closed():
                 await asyncio.sleep(0.5)
